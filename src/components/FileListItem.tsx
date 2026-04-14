@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import { Trash2, Music } from "lucide-react-native";
+import { Trash2, Music, Check, X } from "lucide-react-native";
 import { theme } from "../constants/theme";
 import type { AudioTrack } from "../types/audio";
 
@@ -12,19 +12,28 @@ interface Props {
 }
 
 export function FileListItem({ track, isActive, onPress, onDelete }: Props) {
+    const [confirming, setConfirming] = React.useState(false);
+
     const sizeKb = Math.round(track.sizeBytes / 1024);
     const sizeLabel =
         sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
 
+    const handleDeletePress = () => setConfirming(true);
+    const handleCancel = () => setConfirming(false);
+    const handleConfirm = () => {
+        setConfirming(false);
+        onDelete();
+    };
+
     return (
         <View style={[styles.container, isActive && styles.active]}>
-            {/* Main tappable area — does NOT wrap the delete button */}
+            {/* Main tappable area */}
             <Pressable
                 style={({ pressed }) => [
                     styles.mainContent,
-                    pressed && styles.pressed,
+                    !confirming && pressed && styles.pressed,
                 ]}
-                onPress={onPress}
+                onPress={confirming ? handleCancel : onPress}
             >
                 <View style={styles.icon}>
                     <Music
@@ -47,19 +56,44 @@ export function FileListItem({ track, isActive, onPress, onDelete }: Props) {
                 </View>
             </Pressable>
 
-            {/* Delete button lives outside the main Pressable to prevent
-                event-bubbling issues on web where a nested Pressable click
-                would also fire the parent's onPress handler. */}
-            <Pressable
-                style={({ pressed }) => [
-                    styles.deleteBtn,
-                    pressed && styles.deleteBtnPressed,
-                ]}
-                onPress={onDelete}
-                hitSlop={8}
-            >
-                <Trash2 size={18} color={theme.colors.danger} />
-            </Pressable>
+            {/* Right-side action area */}
+            {confirming ? (
+                /* Inline confirm: Delete / Cancel */
+                <View style={styles.confirmRow}>
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.confirmBtn,
+                            pressed && styles.confirmBtnPressed,
+                        ]}
+                        onPress={handleConfirm}
+                    >
+                        <Check size={14} color={theme.colors.background} />
+                        <Text style={styles.confirmBtnText}>Delete</Text>
+                    </Pressable>
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.cancelBtn,
+                            pressed && styles.cancelBtnPressed,
+                        ]}
+                        onPress={handleCancel}
+                    >
+                        <X size={14} color={theme.colors.textSecondary} />
+                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                    </Pressable>
+                </View>
+            ) : (
+                /* Trash icon */
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.deleteBtn,
+                        pressed && styles.deleteBtnPressed,
+                    ]}
+                    onPress={handleDeletePress}
+                    hitSlop={8}
+                >
+                    <Trash2 size={18} color={theme.colors.danger} />
+                </Pressable>
+            )}
         </View>
     );
 }
@@ -108,6 +142,8 @@ const styles = StyleSheet.create({
         color: theme.colors.textMuted,
         fontSize: theme.fontSize.xs,
     },
+
+    /* Trash icon button */
     deleteBtn: {
         width: 48,
         height: 48,
@@ -117,5 +153,49 @@ const styles = StyleSheet.create({
     },
     deleteBtnPressed: {
         opacity: 0.6,
+    },
+
+    /* Inline confirm row */
+    confirmRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: theme.spacing.xs,
+        paddingRight: theme.spacing.sm,
+    },
+    confirmBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        backgroundColor: theme.colors.danger,
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: theme.spacing.xs,
+        borderRadius: theme.borderRadius.sm,
+    },
+    confirmBtnPressed: {
+        opacity: 0.75,
+    },
+    confirmBtnText: {
+        color: theme.colors.background,
+        fontSize: theme.fontSize.sm,
+        fontWeight: "600",
+    },
+    cancelBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        backgroundColor: theme.colors.surface,
+        borderWidth: 1,
+        borderColor: theme.colors.surfaceLight,
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: theme.spacing.xs,
+        borderRadius: theme.borderRadius.sm,
+    },
+    cancelBtnPressed: {
+        opacity: 0.75,
+    },
+    cancelBtnText: {
+        color: theme.colors.textSecondary,
+        fontSize: theme.fontSize.sm,
+        fontWeight: "600",
     },
 });

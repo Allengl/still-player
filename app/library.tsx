@@ -1,12 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import {
-    View,
-    FlatList,
-    Text,
-    Pressable,
-    StyleSheet,
-    Alert,
-} from "react-native";
+import { View, FlatList, Text, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { FolderOpen } from "lucide-react-native";
@@ -38,18 +31,9 @@ export default function LibraryScreen() {
         }
     };
 
-    const handleDelete = (track: AudioTrack) => {
-        Alert.alert("Delete", `Delete "${track.name}"?`, [
-            { text: "Cancel", style: "cancel" },
-            {
-                text: "Delete",
-                style: "destructive",
-                onPress: async () => {
-                    await deleteAudioFile(track);
-                    await loadTracks();
-                },
-            },
-        ]);
+    const handleDelete = async (track: AudioTrack) => {
+        await deleteAudioFile(track);
+        await loadTracks();
     };
 
     const handleSelect = (track: AudioTrack) => {
