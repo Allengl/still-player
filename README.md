@@ -34,6 +34,7 @@ No streaming. No subscriptions. Just your files and your focus.
 - Real-time waveform visualization
 - Background playback — audio keeps playing when you switch apps
 - Lock screen controls with track metadata
+- Playback speed control — 0.5×, 0.75×, 1×, 1.25×, 1.5×, 2× presets, rate is preserved when switching tracks
 
 ### 🔁 A-B Loop Repeat
 - Set a start point **A** and end point **B** to loop any segment
@@ -50,6 +51,12 @@ No streaming. No subscriptions. Just your files and your focus.
 - Files are copied into the app's private sandbox — no cloud required
 - Swipe-to-delete or long-press to remove tracks
 - Persisted across sessions via AsyncStorage
+
+### 🌐 Web Support
+- Runs in any modern browser via Expo web (React Native Web)
+- Audio import uses the browser's native file picker (no native file-system APIs required)
+- Playback powered by the HTML5 Audio API
+- All features (A-B loop, speed control, timer) work identically on web and native
 
 ---
 
@@ -89,6 +96,7 @@ still/
 │   │   ├── TrackInfo.tsx        # Track name + current time display
 │   │   ├── TransportControls.tsx
 │   │   ├── ABControls.tsx       # A-B marker controls + fine-tune
+│   │   ├── SpeedControl.tsx     # Playback speed presets (0.5×–2×)
 │   │   ├── TimerPanel.tsx       # Countdown & loop counter UI
 │   │   └── FileListItem.tsx     # Library list row
 │   ├── hooks/
@@ -157,12 +165,17 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`
 
 ## Download
 
-A pre-built release APK for **arm64-v8a** (modern Android phones, API 24+) is included in the repository:
+Pre-built release APKs are included in the repository:
 
-📦 **[Still-1.0.0-arm64.apk](./Still-1.0.0-arm64.apk)** — 30 MB
+| File | Architectures | Size | Use case |
+|------|--------------|------|----------|
+| 📦 [Still-1.0.0-universal.apk](./Still-1.0.0-universal.apk) | armeabi-v7a · arm64-v8a · x86 · x86_64 | ~73 MB | Maximum compatibility (emulators, all devices) |
+| 📦 [Still-1.0.0-arm64.apk](./Still-1.0.0-arm64.apk) | arm64-v8a only | ~30 MB | Modern Android phones (recommended) |
 
-Install directly on your device:
+Install directly on your device or emulator:
 ```bash
+adb install Still-1.0.0-universal.apk
+# or for modern devices
 adb install Still-1.0.0-arm64.apk
 ```
 
@@ -202,7 +215,8 @@ The `useTimerManager` hook handles two independent modes:
 | Version | 1.0.0 |
 | Min SDK | Android 7.0 (API 24) |
 | Target SDK | API 36 |
-| Architectures | arm64-v8a |
+| Architectures | arm64-v8a · armeabi-v7a · x86 · x86_64 (universal) |
+| Web | Supported (Expo Web / React Native Web) |
 
 ---
 

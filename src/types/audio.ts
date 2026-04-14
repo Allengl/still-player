@@ -1,26 +1,27 @@
-export type PlaybackState = 'idle' | 'loading' | 'playing' | 'paused';
-export type ABMarkerState = 'unmarked' | 'a-set' | 'ab-looping';
+export type PlaybackState = "idle" | "loading" | "playing" | "paused";
+export type ABMarkerState = "unmarked" | "a-set" | "ab-looping";
 
 export interface ABMarkers {
-  state: ABMarkerState;
-  pointA: number | null; // seconds
-  pointB: number | null; // seconds
+    state: ABMarkerState;
+    pointA: number | null; // seconds
+    pointB: number | null; // seconds
 }
 
 export interface AudioTrack {
-  id: string;
-  name: string;
-  uri: string;
-  fileName: string;
-  sizeBytes: number;
-  importedAt: number;
+    id: string;
+    name: string;
+    uri: string;
+    fileName: string;
+    sizeBytes: number;
+    importedAt: number;
 }
 
 export interface AudioEngineState {
-  playbackState: PlaybackState;
-  currentTrack: AudioTrack | null;
-  currentTime: number;
-  duration: number;
-  volume: number;
-  abMarkers: ABMarkers;
+    playbackState: PlaybackState;
+    currentTrack: AudioTrack | null;
+    currentTime: number;
+    duration: number;
+    volume: number;
+    playbackRate: number;
+    abMarkers: ABMarkers;
 }
