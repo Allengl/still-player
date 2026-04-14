@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ScrollView, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { useAudioEngine, audioEngine } from "../src/engine/useAudioEngine";
 import { useTimerManager } from "../src/hooks/useTimerManager";
 import { WaveformView } from "../src/components/WaveformView";
@@ -26,10 +27,11 @@ export default function PlayerScreen() {
                 {/* Waveform */}
                 <WaveformView player={audioEngine.getPlayer()} />
 
-                {/* Track info + big time */}
+                {/* Track info + big time — tap to open Library */}
                 <TrackInfo
                     trackName={state.currentTrack?.name ?? null}
                     currentTime={state.currentTime}
+                    onPress={() => router.navigate("/library")}
                 />
 
                 {/* Progress bar */}
