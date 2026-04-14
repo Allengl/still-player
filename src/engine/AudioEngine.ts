@@ -163,11 +163,18 @@ export class AudioEngine {
 
     async seekTo(seconds: number) {
         if (!this.player) return;
+        if (!Number.isFinite(seconds)) return;
+        const safe = Math.max(0, seconds);
         this.isSeeking = true;
-        await this.player.seekTo(seconds);
-        this.state = { ...this.state, currentTime: seconds };
-        this.isSeeking = false;
-        this.notify();
+        try {
+            await this.player.seekTo(safe);
+            this.state = { ...this.state, currentTime: safe };
+        } catch {
+            // seekTo may fail in edge cases (audio not ready, web restrictions, etc.)
+        } finally {
+            this.isSeeking = false;
+            this.notify();
+        }
     }
 
     setVolume(volume: number) {
