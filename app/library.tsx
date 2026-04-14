@@ -54,10 +54,6 @@ export default function LibraryScreen() {
 
     const handleSelect = (track: AudioTrack) => {
         audioEngine.loadTrack(track);
-    };
-
-    const handleDoubleSelect = (track: AudioTrack) => {
-        audioEngine.loadTrack(track);
         router.navigate("/");
     };
 
@@ -80,7 +76,6 @@ export default function LibraryScreen() {
                         isActive={state.currentTrack?.id === item.id}
                         onPress={() => handleSelect(item)}
                         onDelete={() => handleDelete(item)}
-                        onDoublePress={() => handleDoubleSelect(item)}
                     />
                 )}
                 ListEmptyComponent={
@@ -91,15 +86,6 @@ export default function LibraryScreen() {
                             Tap "Import" to add .mp3 or .wav files
                         </Text>
                     </View>
-                }
-                ListFooterComponent={
-                    tracks.length > 0 ? (
-                        <View style={styles.hint}>
-                            <Text style={styles.hintText}>
-                                Double-tap a track to open the player
-                            </Text>
-                        </View>
-                    ) : null
                 }
             />
         </View>
@@ -153,13 +139,5 @@ const styles = StyleSheet.create({
     emptyHint: {
         color: theme.colors.textMuted,
         fontSize: theme.fontSize.sm,
-    },
-    hint: {
-        alignItems: "center",
-        paddingVertical: theme.spacing.lg,
-    },
-    hintText: {
-        color: theme.colors.textMuted,
-        fontSize: theme.fontSize.xs,
     },
 });

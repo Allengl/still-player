@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+// Platform is used for web-specific audio autoplay handling
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import type { AudioPlayer, AudioEvents } from "expo-audio";
 import type {
@@ -119,7 +120,24 @@ export class AudioEngine {
                 this.player.playbackRate = this.state.playbackRate;
             }
 
-            // Wait for isLoaded via status updates — play will be called in handleStatusUpdate
+            // On web, browser autoplay policy requires play() to be called
+            // synchronously within a user gesture context. By the time the async
+            // playbackStatusUpdate fires, the gesture context is gone and the
+            // browser will block autoplay. We call play() here while we are still
+            // inside the original user gesture call stack.
+            if (Platform.OS === "web") {
+                try {
+                    this.player.play();
+                    this.state = { ...this.state, playbackState: "playing" };
+                    this.notify();
+                } catch {
+                    // Autoplay still blocked (e.g. no prior gesture) — stay paused
+                    this.state = { ...this.state, playbackState: "paused" };
+                    this.notify();
+                }
+            }
+
+            // Native: wait for isLoaded via status updates — play will be called in handleStatusUpdate
         } catch {
             this.state = { ...INITIAL_STATE };
             this.notify();
@@ -293,7 +311,8 @@ export class AudioEngine {
     // ──── Status update handler ────
 
     private handleStatusUpdate(status: AudioStatus) {
-        // Handle initial load
+        // Handle initial load (native only — on web play() was already called in
+        // loadTrack() while inside the user gesture context).
         if (status.isLoaded && this.state.playbackState === "loading") {
             this.player?.play();
             this.state = {
@@ -305,6 +324,22 @@ export class AudioEngine {
             this.activateLockScreen();
             this.notify();
             return;
+        }
+
+        // Web: once audio metadata arrives, update duration (play was already started).
+        if (
+            Platform.OS === "web" &&
+            status.isLoaded &&
+            status.duration > 0 &&
+            this.state.duration === 0
+        ) {
+            this.state = {
+                ...this.state,
+                duration: status.duration,
+                currentTime: status.currentTime,
+            };
+            this.notify();
+            // Fall through so the rest of the status handler also runs.
         }
 
         // Handle track finished (only when not AB looping)
