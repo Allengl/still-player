@@ -21,6 +21,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# APK binaries — distributed via GitHub Releases, not committed to the repo
+*.apk
+
 # Metro
 .metro-health-check*
 

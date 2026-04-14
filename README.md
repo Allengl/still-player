@@ -149,7 +149,7 @@ npx expo prebuild --platform android
 npm run android
 ```
 
-### Build a Release APK
+### Build a Release APK Locally
 
 ```bash
 # Full build (all architectures)
@@ -161,23 +161,43 @@ cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 
 Output: `android/app/build/outputs/apk/release/app-release.apk`
 
+### Release via GitHub Actions (recommended)
+
+Releases are built automatically by CI. Just push a version tag:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+GitHub Actions will:
+1. Generate the Android project with `expo prebuild`
+2. Build the **arm64** APK (`~30 MB`)
+3. Build the **universal** APK (`~73 MB`, all ABIs)
+4. Publish both as a [GitHub Release](https://github.com/Allengl/still-player/releases) with install instructions
+
+You can also trigger a release manually from the **Actions** tab in the repository using the `workflow_dispatch` option and entering a version number.
+
 ---
 
 ## Download
 
-Pre-built release APKs are included in the repository:
+Download the latest APKs from the **[GitHub Releases](https://github.com/Allengl/still-player/releases/latest)** page.
 
-| File | Architectures | Size | Use case |
-|------|--------------|------|----------|
-| 📦 [Still-1.0.0-universal.apk](./Still-1.0.0-universal.apk) | armeabi-v7a · arm64-v8a · x86 · x86_64 | ~73 MB | Maximum compatibility (emulators, all devices) |
-| 📦 [Still-1.0.0-arm64.apk](./Still-1.0.0-arm64.apk) | arm64-v8a only | ~30 MB | Modern Android phones (recommended) |
+| APK | Architectures | Size | Best for |
+|-----|--------------|------|----------|
+| `Still-vX.X.X-arm64.apk` | arm64-v8a | ~30 MB | Modern Android phones ✅ recommended |
+| `Still-vX.X.X-universal.apk` | armeabi-v7a · arm64-v8a · x86 · x86_64 | ~73 MB | All devices & emulators |
 
-Install directly on your device or emulator:
+Install via ADB:
 ```bash
-adb install Still-1.0.0-universal.apk
-# or for modern devices
-adb install Still-1.0.0-arm64.apk
+# Recommended for modern devices
+adb install Still-vX.X.X-arm64.apk
 ```
+
+> APK binaries are not stored in the repository. Every tagged release is built
+> automatically by the CI workflow and attached to the corresponding
+> [GitHub Release](https://github.com/Allengl/still-player/releases).
 
 ---
 

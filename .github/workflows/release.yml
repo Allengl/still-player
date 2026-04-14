@@ -1,0 +1,141 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.1.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Source ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Toolchain ─────────────────────────────────────────────────────────
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Android NDK 27.1.12297006
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;27.1.12297006"
+
+      # ── JS dependencies ───────────────────────────────────────────────────
+      - name: Install JS dependencies
+        run: npm ci
+
+      # ── Generate native Android project ───────────────────────────────────
+      - name: Expo Prebuild (generate android/)
+        run: npx expo prebuild --platform android --clean
+        env:
+          NODE_ENV: production
+
+      # ── Resolve release version ───────────────────────────────────────────
+      - name: Resolve version string
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Strip the leading "refs/tags/" prefix
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Gradle cache ──────────────────────────────────────────────────────
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ── Build arm64-v8a APK ───────────────────────────────────────────────
+      - name: Build arm64 APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            --no-daemon
+
+      - name: Collect arm64 APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "Still-${{ steps.ver.outputs.VERSION }}-arm64.apk"
+
+      # ── Build universal APK (all four ABIs) ───────────────────────────────
+      - name: Build universal APK
+        run: |
+          cd android
+          ./gradlew clean assembleRelease \
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 \
+            --no-daemon
+
+      - name: Collect universal APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "Still-${{ steps.ver.outputs.VERSION }}-universal.apk"
+
+      # ── Create git tag when triggered manually ────────────────────────────
+      - name: Create and push tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.VERSION }}" \
+                  -m "Release ${{ steps.ver.outputs.VERSION }}"
+          git push origin "${{ steps.ver.outputs.VERSION }}"
+
+      # ── Publish GitHub Release ────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.ver.outputs.VERSION }}
+          name: Still ${{ steps.ver.outputs.VERSION }}
+          body: |
+            ## 📦 Still ${{ steps.ver.outputs.VERSION }}
+
+            ### Downloads
+
+            | APK | Architectures | Best for |
+            |-----|--------------|----------|
+            | `Still-${{ steps.ver.outputs.VERSION }}-arm64.apk` | arm64-v8a | Modern Android phones ✅ recommended |
+            | `Still-${{ steps.ver.outputs.VERSION }}-universal.apk` | armeabi-v7a · arm64-v8a · x86 · x86_64 | All devices & emulators |
+
+            ### Quick install
+            ```bash
+            adb install Still-${{ steps.ver.outputs.VERSION }}-arm64.apk
+            ```
+
+            > Minimum Android version: **7.0 (API 24)**
+          files: |
+            Still-${{ steps.ver.outputs.VERSION }}-arm64.apk
+            Still-${{ steps.ver.outputs.VERSION }}-universal.apk
+          draft: false
+          prerelease: false
