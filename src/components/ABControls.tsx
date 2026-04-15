@@ -199,37 +199,35 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        paddingVertical: theme.spacing.sm + 2,
-        paddingHorizontal: theme.spacing.lg,
-        borderRadius: theme.borderRadius.md,
-        borderWidth: 1,
-        borderColor: theme.colors.surfaceLight,
-        backgroundColor: theme.colors.surface,
-        gap: theme.spacing.xs,
+        gap: theme.spacing.md,
+        paddingVertical: theme.spacing.md, // larger tap target
+        paddingHorizontal: theme.spacing.lg, // comfortable horizontal padding
+        minHeight: 56, // ensure a decent minimum height
+        borderRadius: theme.borderRadius.lg, // slightly larger radius for the bigger button
     },
     markerButtonAActive: {
         borderColor: theme.colors.markerA,
-        backgroundColor: "rgba(0, 212, 255, 0.07)",
+        backgroundColor: "rgba(0, 212, 255, 0.08)",
     },
     markerButtonBActive: {
         borderColor: theme.colors.markerB,
-        backgroundColor: "rgba(255, 107, 53, 0.07)",
+        backgroundColor: "rgba(255, 107, 53, 0.08)",
     },
     markerButtonDisabled: {
-        opacity: 0.35,
+        opacity: 0.4,
     },
 
     markerLabel: {
-        fontSize: theme.fontSize.md,
-        fontWeight: "600",
+        fontSize: theme.fontSize.lg,
+        fontWeight: "700",
         fontVariant: ["tabular-nums"],
     },
 
     // small ✕ badge shown inside the button when the marker is set
     clearBadge: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(255,255,255,0.06)",
