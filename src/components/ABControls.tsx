@@ -201,39 +201,34 @@ const styles = StyleSheet.create({
         width: theme.spacing.sm,
     },
 
-    // ── Marker buttons (smaller) ───────────────────────────────────────────────
+    // ── Marker buttons — same style as Speed buttons ───────────────────────────
     markerButton: {
-        // smaller, not full-width
-        minWidth: 120,
-        maxWidth: 300,
-        flexShrink: 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        gap: theme.spacing.sm,
-        paddingVertical: theme.spacing.xs, // smaller vertical padding
-        paddingHorizontal: theme.spacing.md, // reduced horizontal padding
-        minHeight: 40, // smaller touch target but still usable
-        borderRadius: theme.borderRadius.lg,
+        gap: theme.spacing.xs,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
+        borderRadius: theme.borderRadius.md, // matches Speed buttons
         borderWidth: 1,
         borderColor: theme.colors.surfaceLight,
         backgroundColor: theme.colors.surface,
     },
     markerButtonAActive: {
         borderColor: theme.colors.markerA,
-        backgroundColor: "rgba(0, 212, 255, 0.05)",
+        backgroundColor: "rgba(0, 212, 255, 0.12)", // matches Speed active tint
     },
     markerButtonBActive: {
         borderColor: theme.colors.markerB,
-        backgroundColor: "rgba(255, 107, 53, 0.05)",
+        backgroundColor: "rgba(255, 107, 53, 0.12)",
     },
     markerButtonDisabled: {
-        opacity: 0.45,
+        opacity: 0.35,
     },
 
     markerLabel: {
-        fontSize: theme.fontSize.sm, // reduced to sm for smaller buttons
-        fontWeight: "700",
+        fontSize: theme.fontSize.sm, // matches Speed button font
+        fontWeight: "600",
         fontVariant: ["tabular-nums"],
     },
 
@@ -245,7 +240,6 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(255,255,255,0.06)",
-        marginLeft: theme.spacing.xs,
     },
 
     // ── Fine-tune controls ────────────────────────────────────────────────────
