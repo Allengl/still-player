@@ -10,7 +10,7 @@
 #                  Defaults to the version in package.json
 #
 # Options:
-#   --skip-build   Skip Gradle build, use pre-built APKs already in staging/
+#   --skip-build   Skip Gradle build; look for pre-built APKs in staging/
 #   --draft        Create release as draft (don't publish immediately)
 #   --notes TEXT   Custom release notes (overrides auto-generated notes)
 #   --help         Show this help message
@@ -36,7 +36,10 @@
 #   - java / JDK 17+  (skipped with --skip-build)
 #   - node  (for reading version from package.json)
 #
-# APKs built & published:
+# How builds work:
+#   A single `./gradlew assembleRelease` with ABI splits enabled produces
+#   5 APKs in one pass — no multiple builds, no gradlew clean between passes:
+#
 #   Still-<ver>-arm64-v8a.apk     64-bit ARM   modern phones (recommended)
 #   Still-<ver>-armeabi-v7a.apk   32-bit ARM   older phones
 #   Still-<ver>-x86_64.apk        64-bit x86   modern emulators / Chromebooks
@@ -78,10 +81,15 @@ SKIP_BUILD=false
 DRAFT=false
 CUSTOM_NOTES=""
 STAGING_DIR=".release-staging"
-GRADLE_OUT="android/app/build/outputs/apk/release/app-release.apk"
 
-# Individual ABI names — order also determines the release notes table order
-ABIS=("arm64-v8a" "armeabi-v7a" "x86_64" "x86")
+# Gradle ABI split output names  →  our release file suffix
+# Format: "gradle-suffix:our-suffix"
+declare -a ABI_MAP=(
+  "arm64-v8a:arm64-v8a"
+  "armeabi-v7a:armeabi-v7a"
+  "x86_64:x86_64"
+  "x86:x86"
+)
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -233,11 +241,94 @@ fi
 mkdir -p "$STAGING_DIR"
 
 # ── Build APKs ────────────────────────────────────────────────────────────────
+# ABI splits are injected into build.gradle automatically (see patch_abi_splits
+# below), so a single assembleRelease with all ABIs produces 5 APKs in one pass:
+#   app-arm64-v8a-release.apk
+#   app-armeabi-v7a-release.apk
+#   app-x86_64-release.apk
+#   app-x86-release.apk
+#   app-universal-release.apk
+# No gradlew clean is needed between builds — that would break CMake codegen.
+GRADLE_APK_DIR="android/app/build/outputs/apk/release"
+GRADLE_FILE="android/app/build.gradle"
+
+# Inject ABI splits into build.gradle if not already present.
+# This is idempotent and survives `expo prebuild --clean` regeneration.
+patch_abi_splits() {
+  if grep -q "splits" "$GRADLE_FILE" 2>/dev/null; then
+    log_info "ABI splits already configured in build.gradle"
+    return
+  fi
+
+  log_info "Injecting ABI splits into build.gradle..."
+
+  # Use python3 for reliable multi-line insertion.
+  # Inserts the splits block right after the androidResources { } closing brace,
+  # which is the last block inside android { } in an Expo-generated build.gradle.
+  python3 - "$GRADLE_FILE" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+content = open(path).read()
+
+splits_block = """
+    // Generate one APK per ABI plus a universal APK in a single build run.
+    // Injected by scripts/release.sh — safe to re-inject after expo prebuild.
+    splits {
+        abi {
+            reset()
+            enable true
+            universalApk true
+            include "armeabi-v7a", "arm64-v8a", "x86_64", "x86"
+        }
+    }
+"""
+
+# Anchor: the closing brace of the androidResources { } block.
+# In Expo's generated build.gradle this block always ends with a line that is
+# exactly four spaces + "}" followed by a blank line before the next section.
+anchor = re.compile(
+    r'(    androidResources \{[^\}]*\}\n)',
+    re.DOTALL
+)
+
+new_content, n = anchor.subn(r'\1' + splits_block, content, count=1)
+if n == 0:
+    print("ERROR: could not locate androidResources block", file=sys.stderr)
+    sys.exit(1)
+
+open(path, 'w').write(new_content)
+print("Patched successfully.")
+PYEOF
+
+  if grep -q "splits" "$GRADLE_FILE"; then
+    log_success "ABI splits injected into build.gradle"
+  else
+    log_error "Failed to inject ABI splits into build.gradle."
+    log_error "Please add the following block manually inside the android { } section of ${GRADLE_FILE}:"
+    cat <<'EOF'
+    splits {
+        abi {
+            reset()
+            enable true
+            universalApk true
+            include "armeabi-v7a", "arm64-v8a", "x86_64", "x86"
+        }
+    }
+EOF
+    exit 1
+  fi
+}
+
 if [[ "$SKIP_BUILD" = false ]]; then
-  log_step "Building Android APKs (${#ABIS[@]} individual + 1 universal)"
+  log_step "Building all APKs (single pass with ABI splits)"
 
   if [[ ! -f "android/gradlew" ]]; then
     log_error "android/gradlew not found. Run: npx expo prebuild --platform android --clean"
+    exit 1
+  fi
+  if [[ ! -f "$GRADLE_FILE" ]]; then
+    log_error "${GRADLE_FILE} not found. Run: npx expo prebuild --platform android --clean"
     exit 1
   fi
   if ! command -v java &>/dev/null; then
@@ -245,77 +336,84 @@ if [[ "$SKIP_BUILD" = false ]]; then
     exit 1
   fi
 
+  patch_abi_splits
+
   cd android
   chmod +x gradlew
 
-  # ── Individual ABI builds ──────────────────────────────────────────────────
-  for ABI in "${ABIS[@]}"; do
-    echo ""
-    log_info "Building ${BOLD}${ABI}${NC} APK..."
-    ./gradlew assembleRelease \
-      -PreactNativeArchitectures="${ABI}" \
-      --no-daemon \
-      --quiet
-    DEST="${PROJECT_ROOT}/${STAGING_DIR}/Still-${VERSION}-${ABI}.apk"
-    cp app/build/outputs/apk/release/app-release.apk "$DEST"
-    SIZE=$(du -sh "$DEST" | cut -f1)
-    log_success "${ABI}  →  Still-${VERSION}-${ABI}.apk  (${SIZE})"
-
-    # Clean native output before the next ABI so no stale .so files bleed in
-    ./gradlew clean --no-daemon --quiet
-  done
-
-  # ── Universal build (all 4 ABIs in one APK) ────────────────────────────────
-  echo ""
-  log_info "Building ${BOLD}universal${NC} APK (all ABIs)..."
+  log_info "Running assembleRelease for all ABIs..."
   ./gradlew assembleRelease \
-    -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 \
+    -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64,x86 \
     --no-daemon \
     --quiet
-  UNIVERSAL_DEST="${PROJECT_ROOT}/${STAGING_DIR}/Still-${VERSION}-universal.apk"
-  cp app/build/outputs/apk/release/app-release.apk "$UNIVERSAL_DEST"
-  UNIVERSAL_SIZE=$(du -sh "$UNIVERSAL_DEST" | cut -f1)
-  log_success "universal  →  Still-${VERSION}-universal.apk  (${UNIVERSAL_SIZE})"
 
   cd "$PROJECT_ROOT"
-
+  log_success "Build complete"
 else
-  log_warn "--skip-build: expecting pre-built APKs already present in ${STAGING_DIR}/"
+  log_warn "--skip-build: expecting pre-built APKs in ${GRADLE_APK_DIR}/ or ${STAGING_DIR}/"
 fi
 
-# ── Collect upload list ───────────────────────────────────────────────────────
+# ── Collect and stage APKs ────────────────────────────────────────────────────
 log_step "Collecting APK(s)"
 
 UPLOAD_FILES=()
 MISSING_APKS=()
 
-for ABI in "${ABIS[@]}"; do
-  APK="${STAGING_DIR}/Still-${VERSION}-${ABI}.apk"
-  if [[ -f "$APK" ]]; then
-    SIZE=$(du -sh "$APK" | cut -f1)
-    log_success "found  ${APK##*/}  (${SIZE})"
-    UPLOAD_FILES+=("$APK")
+# Individual ABI APKs
+for entry in "${ABI_MAP[@]}"; do
+  GRADLE_SUFFIX="${entry%%:*}"
+  OUR_SUFFIX="${entry##*:}"
+
+  DEST="${STAGING_DIR}/Still-${VERSION}-${OUR_SUFFIX}.apk"
+
+  # If we just built, copy from Gradle output; otherwise expect it in staging already
+  GRADLE_SRC="${GRADLE_APK_DIR}/app-${GRADLE_SUFFIX}-release.apk"
+  if [[ "$SKIP_BUILD" = false ]]; then
+    if [[ -f "$GRADLE_SRC" ]]; then
+      cp "$GRADLE_SRC" "$DEST"
+    fi
+  fi
+
+  if [[ -f "$DEST" ]]; then
+    SIZE=$(du -sh "$DEST" | cut -f1)
+    log_success "  Still-${VERSION}-${OUR_SUFFIX}.apk  (${SIZE})"
+    UPLOAD_FILES+=("$DEST")
   else
-    MISSING_APKS+=("$APK")
+    MISSING_APKS+=("Still-${VERSION}-${OUR_SUFFIX}.apk")
   fi
 done
 
-UNIVERSAL_APK="${STAGING_DIR}/Still-${VERSION}-universal.apk"
-if [[ -f "$UNIVERSAL_APK" ]]; then
-  SIZE=$(du -sh "$UNIVERSAL_APK" | cut -f1)
-  log_success "found  ${UNIVERSAL_APK##*/}  (${SIZE})"
-  UPLOAD_FILES+=("$UNIVERSAL_APK")
-else
-  MISSING_APKS+=("$UNIVERSAL_APK")
+# Universal APK
+UNIVERSAL_DEST="${STAGING_DIR}/Still-${VERSION}-universal.apk"
+UNIVERSAL_SRC="${GRADLE_APK_DIR}/app-universal-release.apk"
+if [[ "$SKIP_BUILD" = false ]]; then
+  if [[ -f "$UNIVERSAL_SRC" ]]; then
+    cp "$UNIVERSAL_SRC" "$UNIVERSAL_DEST"
+  fi
 fi
 
+if [[ -f "$UNIVERSAL_DEST" ]]; then
+  SIZE=$(du -sh "$UNIVERSAL_DEST" | cut -f1)
+  log_success "  Still-${VERSION}-universal.apk  (${SIZE})"
+  UPLOAD_FILES+=("$UNIVERSAL_DEST")
+else
+  MISSING_APKS+=("Still-${VERSION}-universal.apk")
+fi
+
+# Abort if nothing to upload
 if [[ ${#UPLOAD_FILES[@]} -eq 0 ]]; then
-  log_error "No APK files found in ${STAGING_DIR}/. Build them first or remove --skip-build."
+  log_error "No APK files found. Run without --skip-build, or check the Gradle output."
+  if [[ ${#MISSING_APKS[@]} -gt 0 ]]; then
+    log_error "Expected files:"
+    for f in "${MISSING_APKS[@]}"; do
+      echo -e "    ${RED}•${NC} $f"
+    done
+  fi
   exit 1
 fi
 
 if [[ ${#MISSING_APKS[@]} -gt 0 ]]; then
-  log_warn "The following APKs were not found and will not be uploaded:"
+  log_warn "The following APKs were not found and will be skipped:"
   for f in "${MISSING_APKS[@]}"; do
     echo -e "    ${YELLOW}•${NC} $f"
   done
@@ -328,15 +426,16 @@ if [[ -n "$CUSTOM_NOTES" ]]; then
   RELEASE_NOTES="$CUSTOM_NOTES"
 else
   APK_ROWS=""
-  for ABI in "${ABIS[@]}"; do
-    case "$ABI" in
+  for entry in "${ABI_MAP[@]}"; do
+    OUR_SUFFIX="${entry##*:}"
+    case "$OUR_SUFFIX" in
       arm64-v8a)   DESC="Modern 64-bit phones ✅ recommended" ;;
       armeabi-v7a) DESC="Older 32-bit phones" ;;
       x86_64)      DESC="Modern emulators / Chromebooks" ;;
       x86)         DESC="Older 32-bit emulators" ;;
       *)           DESC="" ;;
     esac
-    APK_ROWS="${APK_ROWS}| \`Still-${VERSION}-${ABI}.apk\` | \`${ABI}\` | ${DESC} |
+    APK_ROWS="${APK_ROWS}| \`Still-${VERSION}-${OUR_SUFFIX}.apk\` | \`${OUR_SUFFIX}\` | ${DESC} |
 "
   done
   APK_ROWS="${APK_ROWS}| \`Still-${VERSION}-universal.apk\` | all 4 ABIs | Maximum compatibility |"
