@@ -147,13 +147,33 @@ export class AudioEngine {
     play() {
         if (!this.player) return;
         if (
-            this.state.playbackState === "paused" ||
-            this.state.playbackState === "loading"
-        ) {
-            this.player.play();
+            this.state.playbackState !== "paused" &&
+            this.state.playbackState !== "loading"
+        )
+            return;
+
+        // After a track finishes, the native player is in an "ended" state while
+        // our state has currentTime === 0. Calling player.play() directly on an
+        // ended player triggers an immediate didJustFinish again (infinite loop).
+        // Explicitly seekTo(0) first so the native layer exits the ended state.
+        if (this.state.currentTime === 0 && this.state.duration > 0) {
             this.state = { ...this.state, playbackState: "playing" };
             this.notify();
+            this.player
+                .seekTo(0)
+                .then(() => {
+                    this.player?.play();
+                })
+                .catch(() => {
+                    // seekTo failed — attempt play anyway
+                    this.player?.play();
+                });
+            return;
         }
+
+        this.player.play();
+        this.state = { ...this.state, playbackState: "playing" };
+        this.notify();
     }
 
     pause() {
@@ -342,48 +362,71 @@ export class AudioEngine {
             // Fall through so the rest of the status handler also runs.
         }
 
-        // Handle track finished (only when not AB looping)
-        if (
-            status.didJustFinish &&
-            this.state.abMarkers.state !== "ab-looping"
-        ) {
-            this.state = {
-                ...this.state,
-                playbackState: "idle",
-                currentTime: 0,
-            };
-            this.notify();
-            return;
-        }
-
-        // A-B loop enforcement
-        if (
-            this.state.abMarkers.state === "ab-looping" &&
-            this.state.abMarkers.pointB !== null &&
-            this.state.abMarkers.pointA !== null &&
-            !this.isSeeking
-        ) {
+        // ── Track ended ────────────────────────────────────────────────────
+        if (status.didJustFinish) {
             if (
-                status.currentTime >= this.state.abMarkers.pointB ||
-                status.didJustFinish
+                this.state.abMarkers.state === "ab-looping" &&
+                this.state.abMarkers.pointA !== null
             ) {
+                // A-B loop: seek back to A and restart.
+                // No !isSeeking guard here — the track has fully stopped so we
+                // must restart regardless of any in-flight seek.
+                const pointA = this.state.abMarkers.pointA;
                 this.isSeeking = true;
                 this.player
-                    ?.seekTo(this.state.abMarkers.pointA!)
+                    ?.seekTo(pointA)
                     .then(() => {
                         this.isSeeking = false;
-                        if (
-                            this.player &&
-                            this.state.playbackState === "playing"
-                        ) {
+                        if (this.player) {
                             this.player.play();
+                            this.state = {
+                                ...this.state,
+                                playbackState: "playing",
+                                currentTime: pointA,
+                            };
+                            this.notify();
                         }
                     })
                     .catch(() => {
                         this.isSeeking = false;
                     });
                 this.emitLoopCompleted();
+            } else {
+                // No loop: reset to start in "paused" so the play button stays
+                // usable. (Was "idle" which disabled the button entirely.)
+                // play() will call seekTo(0) before playing to exit ended state.
+                this.state = {
+                    ...this.state,
+                    playbackState: "paused",
+                    currentTime: 0,
+                };
+                this.notify();
             }
+            return;
+        }
+
+        // ── A-B loop enforcement during normal playback ─────────────────────
+        if (
+            this.state.abMarkers.state === "ab-looping" &&
+            this.state.abMarkers.pointB !== null &&
+            this.state.abMarkers.pointA !== null &&
+            !this.isSeeking &&
+            status.currentTime >= this.state.abMarkers.pointB
+        ) {
+            const pointA = this.state.abMarkers.pointA;
+            this.isSeeking = true;
+            this.player
+                ?.seekTo(pointA)
+                .then(() => {
+                    this.isSeeking = false;
+                    if (this.player && this.state.playbackState === "playing") {
+                        this.player.play();
+                    }
+                })
+                .catch(() => {
+                    this.isSeeking = false;
+                });
+            this.emitLoopCompleted();
         }
 
         // Regular status update
