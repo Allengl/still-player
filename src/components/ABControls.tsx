@@ -79,6 +79,9 @@ export function ABControls({
                     )}
                 </Pressable>
 
+                {/* spacer between buttons */}
+                <View style={styles.gap} />
+
                 {/* B button */}
                 <Pressable
                     style={[
@@ -193,44 +196,56 @@ const styles = StyleSheet.create({
         gap: theme.spacing.sm,
     },
 
-    // ── Marker buttons ────────────────────────────────────────────────────────
+    // spacer between the two AB buttons
+    gap: {
+        width: theme.spacing.md,
+    },
+
+    // ── Marker buttons (not full-width) ────────────────────────────────────────
     markerButton: {
-        flex: 1,
+        // Remove flex:1 so buttons are not full width.
+        minWidth: 160,
+        maxWidth: 420,
+        flexShrink: 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        gap: theme.spacing.md,
-        paddingVertical: theme.spacing.md, // larger tap target
-        paddingHorizontal: theme.spacing.lg, // comfortable horizontal padding
-        minHeight: 56, // ensure a decent minimum height
-        borderRadius: theme.borderRadius.lg, // slightly larger radius for the bigger button
+        gap: theme.spacing.sm,
+        paddingVertical: theme.spacing.sm, // comfortable but smaller vertical padding
+        paddingHorizontal: theme.spacing.md, // reduced horizontal padding
+        minHeight: 48, // slightly smaller touch target compared to previous 56
+        borderRadius: theme.borderRadius.lg,
+        borderWidth: 1,
+        borderColor: theme.colors.surfaceLight,
+        backgroundColor: theme.colors.surface,
     },
     markerButtonAActive: {
         borderColor: theme.colors.markerA,
-        backgroundColor: "rgba(0, 212, 255, 0.08)",
+        backgroundColor: "rgba(0, 212, 255, 0.06)",
     },
     markerButtonBActive: {
         borderColor: theme.colors.markerB,
-        backgroundColor: "rgba(255, 107, 53, 0.08)",
+        backgroundColor: "rgba(255, 107, 53, 0.06)",
     },
     markerButtonDisabled: {
         opacity: 0.4,
     },
 
     markerLabel: {
-        fontSize: theme.fontSize.lg,
+        fontSize: theme.fontSize.md, // reduced from lg to md
         fontWeight: "700",
         fontVariant: ["tabular-nums"],
     },
 
     // small ✕ badge shown inside the button when the marker is set
     clearBadge: {
-        width: 18,
-        height: 18,
-        borderRadius: 9,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(255,255,255,0.06)",
+        marginLeft: theme.spacing.xs,
     },
 
     // ── Fine-tune controls ────────────────────────────────────────────────────
