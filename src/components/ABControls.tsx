@@ -198,22 +198,22 @@ const styles = StyleSheet.create({
 
     // spacer between the two AB buttons
     gap: {
-        width: theme.spacing.md,
+        width: theme.spacing.sm,
     },
 
-    // ── Marker buttons (not full-width) ────────────────────────────────────────
+    // ── Marker buttons (smaller) ───────────────────────────────────────────────
     markerButton: {
-        // Remove flex:1 so buttons are not full width.
-        minWidth: 160,
-        maxWidth: 420,
+        // smaller, not full-width
+        minWidth: 120,
+        maxWidth: 300,
         flexShrink: 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         gap: theme.spacing.sm,
-        paddingVertical: theme.spacing.sm, // comfortable but smaller vertical padding
+        paddingVertical: theme.spacing.xs, // smaller vertical padding
         paddingHorizontal: theme.spacing.md, // reduced horizontal padding
-        minHeight: 48, // slightly smaller touch target compared to previous 56
+        minHeight: 40, // smaller touch target but still usable
         borderRadius: theme.borderRadius.lg,
         borderWidth: 1,
         borderColor: theme.colors.surfaceLight,
@@ -221,27 +221,27 @@ const styles = StyleSheet.create({
     },
     markerButtonAActive: {
         borderColor: theme.colors.markerA,
-        backgroundColor: "rgba(0, 212, 255, 0.06)",
+        backgroundColor: "rgba(0, 212, 255, 0.05)",
     },
     markerButtonBActive: {
         borderColor: theme.colors.markerB,
-        backgroundColor: "rgba(255, 107, 53, 0.06)",
+        backgroundColor: "rgba(255, 107, 53, 0.05)",
     },
     markerButtonDisabled: {
-        opacity: 0.4,
+        opacity: 0.45,
     },
 
     markerLabel: {
-        fontSize: theme.fontSize.md, // reduced from lg to md
+        fontSize: theme.fontSize.sm, // reduced to sm for smaller buttons
         fontWeight: "700",
         fontVariant: ["tabular-nums"],
     },
 
     // small ✕ badge shown inside the button when the marker is set
     clearBadge: {
-        width: 16,
-        height: 16,
-        borderRadius: 8,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(255,255,255,0.06)",
