@@ -10,8 +10,7 @@
 #                  Defaults to the version in package.json
 #
 # Options:
-#   --skip-build   Skip Gradle build, use existing APK in build outputs
-#   --universal    Also build & upload a universal (all-ABI) APK
+#   --skip-build   Skip Gradle build, use pre-built APKs already in staging/
 #   --draft        Create release as draft (don't publish immediately)
 #   --notes TEXT   Custom release notes (overrides auto-generated notes)
 #   --help         Show this help message
@@ -27,22 +26,27 @@
 #
 #   How to create a PAT (Option A):
 #       1. Go to https://github.com/settings/tokens/new
-#       2. Select scope: "repo" (full control of private repositories)
-#            OR for public repos: "public_repo" is enough
-#       3. Copy the token and export GITHUB_TOKEN=<token>
-#       4. Optionally add it to ~/.bashrc or ~/.zshrc for persistence
+#       2. Select scope: "repo"  (or "public_repo" for public repos)
+#       3. Copy the token and: export GITHUB_TOKEN=<token>
+#       4. Optionally persist it in ~/.bashrc or ~/.zshrc
 #
 # Prerequisites:
 #   - curl  (always required)
 #   - gh CLI (only required if GITHUB_TOKEN is not set)
-#   - java / JDK 17+ (only required without --skip-build)
+#   - java / JDK 17+  (skipped with --skip-build)
 #   - node  (for reading version from package.json)
 #
+# APKs built & published:
+#   Still-<ver>-arm64-v8a.apk     64-bit ARM   modern phones (recommended)
+#   Still-<ver>-armeabi-v7a.apk   32-bit ARM   older phones
+#   Still-<ver>-x86_64.apk        64-bit x86   modern emulators / Chromebooks
+#   Still-<ver>-x86.apk           32-bit x86   older emulators
+#   Still-<ver>-universal.apk     all 4 ABIs   maximum compatibility
+#
 # Examples:
-#   GITHUB_TOKEN=ghp_xxx ./scripts/release.sh              # PAT, version from package.json
-#   GITHUB_TOKEN=ghp_xxx ./scripts/release.sh v1.2.0       # PAT, explicit version
-#   ./scripts/release.sh v1.2.0 --skip-build               # gh CLI, skip build
-#   ./scripts/release.sh v1.2.0 --universal                # arm64 + universal APKs
+#   GITHUB_TOKEN=ghp_xxx ./scripts/release.sh              # version from package.json
+#   GITHUB_TOKEN=ghp_xxx ./scripts/release.sh v1.2.0       # explicit version
+#   ./scripts/release.sh v1.2.0 --skip-build               # skip build, upload staged APKs
 #   ./scripts/release.sh v1.2.0 --draft                    # create draft release
 # =============================================================================
 
@@ -71,11 +75,13 @@ cd "$PROJECT_ROOT"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 VERSION=""
 SKIP_BUILD=false
-BUILD_UNIVERSAL=false
 DRAFT=false
 CUSTOM_NOTES=""
-ANDROID_BUILD_APK="android/app/build/outputs/apk/release/app-release.apk"
 STAGING_DIR=".release-staging"
+GRADLE_OUT="android/app/build/outputs/apk/release/app-release.apk"
+
+# Individual ABI names — order also determines the release notes table order
+ABIS=("arm64-v8a" "armeabi-v7a" "x86_64" "x86")
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -83,12 +89,11 @@ while [[ $# -gt 0 ]]; do
     --help|-h)
       sed -n '/^# Usage:/,/^# ====/p' "$0" | sed 's/^# \?//'
       exit 0 ;;
-    --skip-build)  SKIP_BUILD=true;        shift ;;
-    --universal)   BUILD_UNIVERSAL=true;   shift ;;
-    --draft)       DRAFT=true;             shift ;;
-    --notes)       CUSTOM_NOTES="$2";      shift 2 ;;
-    v[0-9]*)       VERSION="$1";           shift ;;
-    [0-9]*)        VERSION="v$1";          shift ;;
+    --skip-build)  SKIP_BUILD=true;   shift ;;
+    --draft)       DRAFT=true;        shift ;;
+    --notes)       CUSTOM_NOTES="$2"; shift 2 ;;
+    v[0-9]*)       VERSION="$1";      shift ;;
+    [0-9]*)        VERSION="v$1";     shift ;;
     *)
       log_error "Unknown argument: $1"
       echo "Run '$0 --help' for usage."
@@ -116,7 +121,6 @@ printf   "║     🎵  Still – Release %-18s║\n" "${VERSION}"
 echo -e  "╚══════════════════════════════════════════╝${NC}\n"
 
 # ── Detect auth method ────────────────────────────────────────────────────────
-# Priority: GITHUB_TOKEN env var  >  gh CLI
 USE_CURL=false
 USE_GH=false
 
@@ -127,8 +131,7 @@ elif command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
   USE_GH=true
   log_info "Auth method: ${BOLD}gh CLI${NC} ($(gh api user -q .login 2>/dev/null))"
 elif command -v gh &>/dev/null; then
-  log_warn "gh CLI found but not authenticated."
-  log_warn "Starting interactive login (or set GITHUB_TOKEN to skip)..."
+  log_warn "gh CLI found but not authenticated. Starting interactive login..."
   echo ""
   gh auth login
   echo ""
@@ -153,7 +156,6 @@ if [[ "$USE_GH" = true ]]; then
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)
 fi
 if [[ -z "${REPO:-}" ]]; then
-  # Parse from git remote URL (supports both https and ssh remotes)
   REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
   if [[ "$REMOTE_URL" =~ github\.com[:/](.+/.+)(\.git)?$ ]]; then
     REPO="${BASH_REMATCH[1]%.git}"
@@ -163,16 +165,13 @@ if [[ -z "${REPO:-}" ]]; then
   log_error "Could not determine GitHub repository. Check 'git remote -v'."
   exit 1
 fi
-REPO_OWNER="${REPO%%/*}"
-REPO_NAME="${REPO##*/}"
 log_info "Repository: ${BOLD}${REPO}${NC}"
 
-# ── GitHub API helpers (curl) ─────────────────────────────────────────────────
+# ── GitHub API helpers ────────────────────────────────────────────────────────
 GH_API="https://api.github.com"
 GH_UPLOAD="https://uploads.github.com"
 
 api_get() {
-  # api_get <path>  → stdout JSON, returns curl exit code
   curl -fsSL \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
@@ -180,7 +179,6 @@ api_get() {
 }
 
 api_post_json() {
-  # api_post_json <path> <json-body>  → stdout JSON
   curl -fsSL -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
@@ -190,13 +188,9 @@ api_post_json() {
 }
 
 api_upload_asset() {
-  # api_upload_asset <upload_url_base> <filename> <filepath>
-  local upload_url="$1"
-  local filename="$2"
-  local filepath="$3"
+  local upload_url="$1" filename="$2" filepath="$3"
   local filesize
   filesize=$(stat -c%s "$filepath" 2>/dev/null || stat -f%z "$filepath")
-
   curl -fsSL -X POST \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
@@ -232,9 +226,15 @@ else
   fi
 fi
 
+# ── Prepare staging directory ─────────────────────────────────────────────────
+if [[ "$SKIP_BUILD" = false ]]; then
+  rm -rf "$STAGING_DIR"
+fi
+mkdir -p "$STAGING_DIR"
+
 # ── Build APKs ────────────────────────────────────────────────────────────────
 if [[ "$SKIP_BUILD" = false ]]; then
-  log_step "Building Android APK(s)"
+  log_step "Building Android APKs (${#ABIS[@]} individual + 1 universal)"
 
   if [[ ! -f "android/gradlew" ]]; then
     log_error "android/gradlew not found. Run: npx expo prebuild --platform android --clean"
@@ -248,67 +248,98 @@ if [[ "$SKIP_BUILD" = false ]]; then
   cd android
   chmod +x gradlew
 
-  echo ""
-  log_info "Building arm64-v8a APK..."
-  ./gradlew assembleRelease \
-    -PreactNativeArchitectures=arm64-v8a \
-    --no-daemon \
-    --quiet
-  log_success "arm64 APK built"
-
-  if [[ "$BUILD_UNIVERSAL" = true ]]; then
+  # ── Individual ABI builds ──────────────────────────────────────────────────
+  for ABI in "${ABIS[@]}"; do
     echo ""
-    log_info "Building universal APK (armeabi-v7a, arm64-v8a, x86, x86_64)..."
-    ./gradlew clean assembleRelease \
-      -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 \
+    log_info "Building ${BOLD}${ABI}${NC} APK..."
+    ./gradlew assembleRelease \
+      -PreactNativeArchitectures="${ABI}" \
       --no-daemon \
       --quiet
-    log_success "Universal APK built"
-  fi
+    DEST="${PROJECT_ROOT}/${STAGING_DIR}/Still-${VERSION}-${ABI}.apk"
+    cp app/build/outputs/apk/release/app-release.apk "$DEST"
+    SIZE=$(du -sh "$DEST" | cut -f1)
+    log_success "${ABI}  →  Still-${VERSION}-${ABI}.apk  (${SIZE})"
+
+    # Clean native output before the next ABI so no stale .so files bleed in
+    ./gradlew clean --no-daemon --quiet
+  done
+
+  # ── Universal build (all 4 ABIs in one APK) ────────────────────────────────
+  echo ""
+  log_info "Building ${BOLD}universal${NC} APK (all ABIs)..."
+  ./gradlew assembleRelease \
+    -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 \
+    --no-daemon \
+    --quiet
+  UNIVERSAL_DEST="${PROJECT_ROOT}/${STAGING_DIR}/Still-${VERSION}-universal.apk"
+  cp app/build/outputs/apk/release/app-release.apk "$UNIVERSAL_DEST"
+  UNIVERSAL_SIZE=$(du -sh "$UNIVERSAL_DEST" | cut -f1)
+  log_success "universal  →  Still-${VERSION}-universal.apk  (${UNIVERSAL_SIZE})"
 
   cd "$PROJECT_ROOT"
+
 else
-  log_warn "Skipping build (--skip-build). Using existing APK(s) in build outputs."
+  log_warn "--skip-build: expecting pre-built APKs already present in ${STAGING_DIR}/"
 fi
 
-# ── Verify source APK ─────────────────────────────────────────────────────────
+# ── Collect upload list ───────────────────────────────────────────────────────
 log_step "Collecting APK(s)"
 
-if [[ ! -f "$ANDROID_BUILD_APK" ]]; then
-  log_error "APK not found: ${ANDROID_BUILD_APK}"
-  log_error "Run without --skip-build, or build manually first."
+UPLOAD_FILES=()
+MISSING_APKS=()
+
+for ABI in "${ABIS[@]}"; do
+  APK="${STAGING_DIR}/Still-${VERSION}-${ABI}.apk"
+  if [[ -f "$APK" ]]; then
+    SIZE=$(du -sh "$APK" | cut -f1)
+    log_success "found  ${APK##*/}  (${SIZE})"
+    UPLOAD_FILES+=("$APK")
+  else
+    MISSING_APKS+=("$APK")
+  fi
+done
+
+UNIVERSAL_APK="${STAGING_DIR}/Still-${VERSION}-universal.apk"
+if [[ -f "$UNIVERSAL_APK" ]]; then
+  SIZE=$(du -sh "$UNIVERSAL_APK" | cut -f1)
+  log_success "found  ${UNIVERSAL_APK##*/}  (${SIZE})"
+  UPLOAD_FILES+=("$UNIVERSAL_APK")
+else
+  MISSING_APKS+=("$UNIVERSAL_APK")
+fi
+
+if [[ ${#UPLOAD_FILES[@]} -eq 0 ]]; then
+  log_error "No APK files found in ${STAGING_DIR}/. Build them first or remove --skip-build."
   exit 1
 fi
 
-# ── Stage APKs with versioned names ──────────────────────────────────────────
-rm -rf "$STAGING_DIR"
-mkdir -p "$STAGING_DIR"
-
-ARM64_APK="${STAGING_DIR}/Still-${VERSION}-arm64.apk"
-cp "$ANDROID_BUILD_APK" "$ARM64_APK"
-ARM64_SIZE=$(du -sh "$ARM64_APK" | cut -f1)
-log_success "arm64   →  Still-${VERSION}-arm64.apk  (${ARM64_SIZE})"
-
-UPLOAD_FILES=("$ARM64_APK")
-
-if [[ "$BUILD_UNIVERSAL" = true ]]; then
-  UNIVERSAL_APK="${STAGING_DIR}/Still-${VERSION}-universal.apk"
-  cp "$ANDROID_BUILD_APK" "$UNIVERSAL_APK"
-  UNIVERSAL_SIZE=$(du -sh "$UNIVERSAL_APK" | cut -f1)
-  log_success "universal →  Still-${VERSION}-universal.apk  (${UNIVERSAL_SIZE})"
-  UPLOAD_FILES+=("$UNIVERSAL_APK")
+if [[ ${#MISSING_APKS[@]} -gt 0 ]]; then
+  log_warn "The following APKs were not found and will not be uploaded:"
+  for f in "${MISSING_APKS[@]}"; do
+    echo -e "    ${YELLOW}•${NC} $f"
+  done
 fi
+
+log_info "${#UPLOAD_FILES[@]} APK(s) ready for upload"
 
 # ── Build release notes ───────────────────────────────────────────────────────
 if [[ -n "$CUSTOM_NOTES" ]]; then
   RELEASE_NOTES="$CUSTOM_NOTES"
 else
-  if [[ "$BUILD_UNIVERSAL" = true ]]; then
-    APK_ROWS="| \`Still-${VERSION}-arm64.apk\` | arm64-v8a | Modern Android phones ✅ recommended |
-| \`Still-${VERSION}-universal.apk\` | all ABIs | All devices & emulators |"
-  else
-    APK_ROWS="| \`Still-${VERSION}-arm64.apk\` | arm64-v8a | Modern Android phones ✅ |"
-  fi
+  APK_ROWS=""
+  for ABI in "${ABIS[@]}"; do
+    case "$ABI" in
+      arm64-v8a)   DESC="Modern 64-bit phones ✅ recommended" ;;
+      armeabi-v7a) DESC="Older 32-bit phones" ;;
+      x86_64)      DESC="Modern emulators / Chromebooks" ;;
+      x86)         DESC="Older 32-bit emulators" ;;
+      *)           DESC="" ;;
+    esac
+    APK_ROWS="${APK_ROWS}| \`Still-${VERSION}-${ABI}.apk\` | \`${ABI}\` | ${DESC} |
+"
+  done
+  APK_ROWS="${APK_ROWS}| \`Still-${VERSION}-universal.apk\` | all 4 ABIs | Maximum compatibility |"
 
   RELEASE_NOTES="## 📦 Still ${VERSION}
 
@@ -318,9 +349,9 @@ else
 |-----|-------------|----------|
 ${APK_ROWS}
 
-### Quick install
+### Quick install (recommended)
 \`\`\`bash
-adb install Still-${VERSION}-arm64.apk
+adb install Still-${VERSION}-arm64-v8a.apk
 \`\`\`
 
 > Minimum Android version: **7.0 (API 24)**"
@@ -329,18 +360,17 @@ fi
 NOTES_FILE="${STAGING_DIR}/release-notes.md"
 printf '%s' "$RELEASE_NOTES" > "$NOTES_FILE"
 
-# ── Publish ───────────────────────────────────────────────────────────────────
+# ── Publish to GitHub Releases ────────────────────────────────────────────────
 log_step "Publishing to GitHub Releases"
 
 DRAFT_JSON="false"
 [[ "$DRAFT" = true ]] && DRAFT_JSON="true"
 
 if [[ "$USE_CURL" = true ]]; then
-  # ── curl / GitHub API path ─────────────────────────────────────────────────
+  # ── curl / GitHub REST API ─────────────────────────────────────────────────
   if [[ "$RELEASE_EXISTS" = false ]]; then
     log_info "Creating release via GitHub API..."
 
-    # Escape notes for JSON (replace backslash, double-quote, newline, tab)
     ESCAPED_NOTES=$(printf '%s' "$RELEASE_NOTES" \
       | sed 's/\\/\\\\/g' \
       | sed 's/"/\\"/g' \
@@ -361,22 +391,21 @@ if [[ "$USE_CURL" = true ]]; then
     log_success "Release created (id=${RELEASE_ID})"
   fi
 
-  # Upload each APK
   for APK_PATH in "${UPLOAD_FILES[@]}"; do
     APK_NAME=$(basename "$APK_PATH")
-    log_info "Uploading ${APK_NAME}..."
+    log_info "Uploading ${APK_NAME} ..."
     api_upload_asset "$UPLOAD_URL_BASE" "$APK_NAME" "$APK_PATH" > /dev/null
     log_success "Uploaded: ${APK_NAME}"
   done
 
 else
-  # ── gh CLI path ───────────────────────────────────────────────────────────
+  # ── gh CLI ────────────────────────────────────────────────────────────────
   if [[ "$RELEASE_EXISTS" = true ]]; then
-    log_info "Uploading assets to existing release ${VERSION}..."
+    log_info "Uploading ${#UPLOAD_FILES[@]} APK(s) to existing release ${VERSION}..."
     gh release upload "$VERSION" "${UPLOAD_FILES[@]}" --clobber
-    log_success "Assets uploaded"
+    log_success "All assets uploaded"
   else
-    log_info "Creating release ${VERSION}..."
+    log_info "Creating release ${VERSION} with ${#UPLOAD_FILES[@]} APK(s)..."
     DRAFT_FLAG=()
     [[ "$DRAFT" = true ]] && DRAFT_FLAG=(--draft)
     gh release create "$VERSION" \
