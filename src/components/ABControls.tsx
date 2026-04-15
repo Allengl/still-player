@@ -10,7 +10,8 @@ interface Props {
     abMarkers: ABMarkers;
     onMarkA: () => void;
     onMarkB: () => void;
-    onClear: () => void;
+    onClearA: () => void; // clears A (and B, since B depends on A)
+    onClearB: () => void; // clears B only, keeps A
     onAdjustA: (delta: number) => void;
     onAdjustB: (delta: number) => void;
 }
@@ -19,113 +20,99 @@ export function ABControls({
     abMarkers,
     onMarkA,
     onMarkB,
-    onClear,
+    onClearA,
+    onClearB,
     onAdjustA,
     onAdjustB,
 }: Props) {
     const { state, pointA, pointB } = abMarkers;
 
-    // ── Single cycling handler ────────────────────────────────────────────────
-    // tap 1 (unmarked)   → set A
-    // tap 2 (a-set)      → set B  →  loop becomes active
-    // tap 3 (ab-looping) → clear  →  back to unmarked
-    const handleCycle = () => {
-        switch (state) {
-            case "unmarked":
-                onMarkA();
-                break;
-            case "a-set":
-                onMarkB();
-                break;
-            case "ab-looping":
-                onClear();
-                break;
+    const aIsSet = state === "a-set" || state === "ab-looping";
+    const bIsSet = state === "ab-looping";
+
+    // A button: set A when not set, clear A (+ B) when already set
+    const handlePressA = () => {
+        if (aIsSet) {
+            onClearA();
+        } else {
+            onMarkA();
         }
     };
 
-    // ── Button content per state ──────────────────────────────────────────────
-    const renderButtonContent = () => {
-        switch (state) {
-            case "unmarked":
-                return (
-                    <View style={styles.btnInner}>
-                        <Text style={styles.btnLabelIdle}>AB</Text>
-                        <Text style={styles.btnHint}>点击设置区间</Text>
-                    </View>
-                );
-
-            case "a-set":
-                return (
-                    <View style={styles.btnInner}>
-                        <View style={styles.btnTimesRow}>
-                            <Text
-                                style={[
-                                    styles.btnTime,
-                                    { color: theme.colors.markerA },
-                                ]}
-                            >
-                                A {formatTime(pointA ?? 0)}
-                            </Text>
-                            <Text style={styles.btnArrow}>→</Text>
-                            <Text style={styles.btnTimePlaceholder}>?</Text>
-                        </View>
-                        <Text style={styles.btnHint}>点击设置终点</Text>
-                    </View>
-                );
-
-            case "ab-looping":
-                return (
-                    <View style={styles.btnInner}>
-                        <View style={styles.btnTimesRow}>
-                            <Text
-                                style={[
-                                    styles.btnTime,
-                                    { color: theme.colors.markerA },
-                                ]}
-                            >
-                                A {formatTime(pointA ?? 0)}
-                            </Text>
-                            <Text style={styles.btnArrow}>↔</Text>
-                            <Text
-                                style={[
-                                    styles.btnTime,
-                                    { color: theme.colors.markerB },
-                                ]}
-                            >
-                                B {formatTime(pointB ?? 0)}
-                            </Text>
-                        </View>
-                        <Text style={styles.btnHint}>点击取消区间</Text>
-                    </View>
-                );
+    // B button: set B when A is set but B isn't, clear B only when B is set
+    const handlePressB = () => {
+        if (bIsSet) {
+            onClearB();
+        } else if (state === "a-set") {
+            onMarkB();
         }
     };
-
-    // ── Button style per state ────────────────────────────────────────────────
-    const mainButtonStyle = [
-        styles.mainButton,
-        state === "a-set" && styles.mainButtonASet,
-        state === "ab-looping" && styles.mainButtonLooping,
-    ];
 
     return (
         <View style={styles.container}>
-            {/* ── Main cycling button row ── */}
+            {/* ── Marker buttons row ── */}
             <View style={styles.row}>
-                <Pressable style={mainButtonStyle} onPress={handleCycle}>
-                    {renderButtonContent()}
+                {/* A button */}
+                <Pressable
+                    style={[
+                        styles.markerButton,
+                        aIsSet && styles.markerButtonAActive,
+                    ]}
+                    onPress={handlePressA}
+                >
+                    <Text
+                        style={[
+                            styles.markerLabel,
+                            {
+                                color: aIsSet
+                                    ? theme.colors.markerA
+                                    : theme.colors.textSecondary,
+                            },
+                        ]}
+                    >
+                        {aIsSet ? `A  ${formatTime(pointA ?? 0)}` : "A"}
+                    </Text>
+                    {aIsSet && (
+                        <View style={styles.clearBadge}>
+                            <X size={10} color={theme.colors.markerA} />
+                        </View>
+                    )}
                 </Pressable>
 
-                {/* X shortcut: visible whenever a marker has been placed */}
-                {state !== "unmarked" && (
-                    <Pressable style={styles.clearButton} onPress={onClear}>
-                        <X size={18} color={theme.colors.danger} />
-                    </Pressable>
-                )}
+                {/* B button */}
+                <Pressable
+                    style={[
+                        styles.markerButton,
+                        bIsSet && styles.markerButtonBActive,
+                        !aIsSet && styles.markerButtonDisabled,
+                    ]}
+                    onPress={handlePressB}
+                    disabled={!aIsSet}
+                >
+                    <Text
+                        style={[
+                            styles.markerLabel,
+                            {
+                                color: bIsSet
+                                    ? theme.colors.markerB
+                                    : aIsSet
+                                      ? theme.colors.textSecondary
+                                      : theme.colors.textMuted,
+                            },
+                        ]}
+                    >
+                        {bIsSet ? `B  ${formatTime(pointB ?? 0)}` : "B"}
+                    </Text>
+                    {bIsSet && (
+                        <View style={styles.clearBadge}>
+                            <X size={10} color={theme.colors.markerB} />
+                        </View>
+                    )}
+                </Pressable>
             </View>
 
             {/* ── Fine-tune row (shown once at least A is placed) ── */}
-            {state !== "unmarked" && (
+            {aIsSet && (
                 <View style={styles.row}>
                     {/* A fine-tune */}
                     <View style={styles.fineGroup}>
@@ -157,8 +144,8 @@ export function ABControls({
                         </Pressable>
                     </View>
 
-                    {/* B fine-tune — only when both markers are set */}
-                    {state === "ab-looping" && (
+                    {/* B fine-tune — only when B is also set */}
+                    {bIsSet && (
                         <View style={styles.fineGroup}>
                             <Text
                                 style={[
@@ -206,72 +193,46 @@ const styles = StyleSheet.create({
         gap: theme.spacing.sm,
     },
 
-    // ── Main cycling button ───────────────────────────────────────────────────
-    mainButton: {
+    // ── Marker buttons ────────────────────────────────────────────────────────
+    markerButton: {
         flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
         paddingVertical: theme.spacing.sm + 2,
         paddingHorizontal: theme.spacing.lg,
         borderRadius: theme.borderRadius.md,
         borderWidth: 1,
         borderColor: theme.colors.surfaceLight,
         backgroundColor: theme.colors.surface,
-        alignItems: "center",
+        gap: theme.spacing.xs,
     },
-    mainButtonASet: {
+    markerButtonAActive: {
         borderColor: theme.colors.markerA,
-        backgroundColor: "rgba(0, 212, 255, 0.06)",
+        backgroundColor: "rgba(0, 212, 255, 0.07)",
     },
-    mainButtonLooping: {
+    markerButtonBActive: {
         borderColor: theme.colors.markerB,
-        backgroundColor: "rgba(255, 107, 53, 0.08)",
+        backgroundColor: "rgba(255, 107, 53, 0.07)",
+    },
+    markerButtonDisabled: {
+        opacity: 0.35,
     },
 
-    // button interior layout
-    btnInner: {
-        alignItems: "center",
-        gap: 2,
-    },
-    btnTimesRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: theme.spacing.sm,
-    },
-    btnLabelIdle: {
-        fontSize: theme.fontSize.md,
-        fontWeight: "700",
-        color: theme.colors.textSecondary,
-        letterSpacing: 2,
-    },
-    btnTime: {
+    markerLabel: {
         fontSize: theme.fontSize.md,
         fontWeight: "600",
         fontVariant: ["tabular-nums"],
     },
-    btnTimePlaceholder: {
-        fontSize: theme.fontSize.md,
-        fontWeight: "600",
-        color: theme.colors.textMuted,
-    },
-    btnArrow: {
-        fontSize: theme.fontSize.md,
-        color: theme.colors.textMuted,
-    },
-    btnHint: {
-        fontSize: theme.fontSize.xs,
-        color: theme.colors.textMuted,
-        marginTop: 1,
-    },
 
-    // ── Clear (X) shortcut button ─────────────────────────────────────────────
-    clearButton: {
-        width: 36,
-        height: 36,
+    // small ✕ badge shown inside the button when the marker is set
+    clearBadge: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: theme.borderRadius.full,
-        backgroundColor: theme.colors.surface,
-        borderWidth: 1,
-        borderColor: theme.colors.surfaceLight,
+        backgroundColor: "rgba(255,255,255,0.06)",
     },
 
     // ── Fine-tune controls ────────────────────────────────────────────────────

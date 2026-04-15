@@ -65,7 +65,8 @@ export default function PlayerScreen() {
                     abMarkers={state.abMarkers}
                     onMarkA={() => audioEngine.markA()}
                     onMarkB={() => audioEngine.markB()}
-                    onClear={() => audioEngine.clearAB()}
+                    onClearA={() => audioEngine.clearAB()}
+                    onClearB={() => audioEngine.clearB()}
                     onAdjustA={(d) => audioEngine.adjustA(d)}
                     onAdjustB={(d) => audioEngine.adjustB(d)}
                 />

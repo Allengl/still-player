@@ -275,6 +275,19 @@ export class AudioEngine {
         this.notify();
     }
 
+    clearB() {
+        if (this.state.abMarkers.state !== "ab-looping") return;
+        this.state = {
+            ...this.state,
+            abMarkers: {
+                state: "a-set",
+                pointA: this.state.abMarkers.pointA,
+                pointB: null,
+            },
+        };
+        this.notify();
+    }
+
     adjustA(deltaSeconds: number) {
         const { abMarkers, duration } = this.state;
         if (abMarkers.pointA === null) return;
