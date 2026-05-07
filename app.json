@@ -2,7 +2,7 @@
     "expo": {
         "name": "Still",
         "slug": "still",
-        "version": "1.0.1"
+        "version": "1.0.5",
         "orientation": "portrait",
         "icon": "./assets/logo-still.png",
         "userInterfaceStyle": "dark",
