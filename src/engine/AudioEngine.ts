@@ -117,7 +117,7 @@ export class AudioEngine {
 
             // Restore playback rate
             if (this.state.playbackRate !== 1.0) {
-                this.player.playbackRate = this.state.playbackRate;
+                this.player.setPlaybackRate(this.state.playbackRate);
             }
 
             // On web, browser autoplay policy requires play() to be called
@@ -225,7 +225,7 @@ export class AudioEngine {
 
     setPlaybackRate(rate: number) {
         if (this.player) {
-            this.player.playbackRate = rate;
+            this.player.setPlaybackRate(rate);
         }
         this.state = { ...this.state, playbackRate: rate };
         this.notify();
