@@ -338,6 +338,23 @@ if [[ "$SKIP_BUILD" = false ]]; then
 
   patch_abi_splits
 
+  # ── Inject node.path into local.properties ──────────────────────────────
+  # Gradle spawns node as a JVM subprocess and does NOT inherit the shell PATH
+  # (this breaks nvm / fnm managed Node installs). Writing node.path to
+  # local.properties lets expo-constants find node regardless of PATH.
+  NODE_BIN=$(command -v node 2>/dev/null || true)
+  if [[ -n "$NODE_BIN" ]]; then
+    LOCAL_PROPS="$PROJECT_ROOT/android/local.properties"
+    if grep -q "^node.path=" "$LOCAL_PROPS" 2>/dev/null; then
+      sed -i "s|^node.path=.*|node.path=${NODE_BIN}|" "$LOCAL_PROPS"
+    else
+      echo "node.path=${NODE_BIN}" >> "$LOCAL_PROPS"
+    fi
+    log_info "node.path → ${NODE_BIN}  (written to local.properties)"
+  else
+    log_warn "Could not detect node binary path — Gradle may fail to find node"
+  fi
+
   cd android
   chmod +x gradlew
 
