@@ -520,6 +520,16 @@ else
     log_info "Uploading ${#UPLOAD_FILES[@]} APK(s) to existing release ${VERSION}..."
     gh release upload "$VERSION" "${UPLOAD_FILES[@]}" --clobber
     log_success "All assets uploaded"
+    # If the existing release was a draft (e.g. from an interrupted prior run),
+    # publish it now — unless the user explicitly asked for a draft.
+    if [[ "$DRAFT" = false ]]; then
+      IS_DRAFT=$(gh release view "$VERSION" --json isDraft -q .isDraft 2>/dev/null || echo "false")
+      if [[ "$IS_DRAFT" = "true" ]]; then
+        log_info "Release was a draft — publishing now..."
+        gh release edit "$VERSION" --draft=false
+        log_success "Release published"
+      fi
+    fi
   else
     log_info "Creating release ${VERSION} with ${#UPLOAD_FILES[@]} APK(s)..."
     DRAFT_FLAG=()
